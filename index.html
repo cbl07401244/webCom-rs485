@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <title>Điều Khiển RS485 / Web Serial API (Tự Động Kết Nối)</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 30px;
+      background-color: #f4f7f6;
+    }
+    .card {
+      background: white;
+      padding: 20px;
+      border-radius: 8px;
+      max-width: 500px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+    button {
+      padding: 10px 15px;
+      margin: 5px;
+      font-size: 14px;
+      cursor: pointer;
+      border: none;
+      border-radius: 4px;
+    }
+    .btn-connect { background-color: #007bff; color: white; }
+    .btn-on { background-color: #28a745; color: white; }
+    .btn-off { background-color: #dc3545; color: white; }
+    .status {
+      font-weight: bold;
+      margin-top: 15px;
+      padding: 8px;
+      border-radius: 4px;
+    }
+    .connected { background-color: #d4edda; color: #155724; }
+    .disconnected { background-color: #f8d7da; color: #721c24; }
+    #log {
+      width: 100%;
+      height: 120px;
+      margin-top: 15px;
+      background: #222;
+      color: #0f0;
+      font-family: monospace;
+      padding: 10px;
+      box-sizing: border-box;
+      border-radius: 4px;
+      overflow-y: auto;
+    }
+  </style>
+</head>
+<body>
+
+<div class="card">
+  <h2>Điều Khiển Relay qua RS485</h2>
+  
+  <!-- Nút Chọn Cổng COM (Chỉ cần bấm 1 lần duy nhất ở lần đầu) -->
+  <button class="btn-connect" onclick="selectAndConnect()">1. Chọn Cổng COM (Lần đầu)</button>
+  <br><br>
+
+  <!-- Nút Điều Khiển -->
+  <button class="btn-on" onclick="sendData('R1')">BẬT RELAY</button>
+  <button class="btn-off" onclick="sendData('R0')">TẮT RELAY</button>
+
+  <div id="status" class="status disconnected">Trạng thái: Chưa kết nối</div>
+
+  <h3>Nhật ký nhận dữ liệu:</h3>
+  <div id="log"></div>
+</div>
+
+<script>
+  let port;
+  let writer;
+  let reader;
+
+  const statusEl = document.getElementById('status');
+  const logEl = document.getElementById('log');
+
+  // Hàm hiển thị log lên màn hình
+  function printLog(msg) {
+    logEl.innerHTML += msg + "<br>";
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+
+  // 1. TỰ ĐỘNG KẾT NỐI LẠI (Chạy ngay khi mở web/F5)
+  async function autoConnect() {
+    if ("serial" in navigator) {
+      try {
+        // Lấy danh sách các cổng COM đã từng được cấp quyền từ trước
+        const ports = await navigator.serial.getPorts();
+        if (ports.length > 0) {
+          port = ports[0];
+          await openPort();
+          printLog("⚡ Tự động kết nối lại cổng COM cũ thành công!");
+        }
+      } catch (err) {
+        printLog("Lỗi khi tự động kết nối: " + err);
+      }
+    } else {
+      alert("Trình duyệt của bạn không hỗ trợ Web Serial API. Hãy dùng Chrome hoặc Edge!");
+    }
+  }
+
+  // 2. CHỌN CỔNG COM BẰNG TAY (Chỉ bấm 1 lần đầu)
+  async function selectAndConnect() {
+    try {
+      // Hiện Popup chọn cổng COM
+      port = await navigator.serial.requestPort();
+      await openPort();
+      printLog(" Bật kết nối mới thành công!");
+    } catch (err) {
+      printLog("Chưa chọn cổng COM hoặc lỗi: " + err);
+    }
+  }
+
+  // 3. HÀM MỞ CỔNG COM VÀ BẮT ĐẦU ĐỌC DỮ LIỆU
+  async function openPort() {
+    // Thay đổi baudRate cho khớp với ESP32 (ví dụ: 9600 hoặc 115200)
+    await port.open({ baudRate: 9600 });
+    
+    writer = port.writable.getWriter();
+    <!--  -->
+    statusEl.innerText = "Trạng thái: ĐÃ KẾT NỐI";
+    statusEl.className = "status connected";
+
+    // Lắng nghe sự kiện rút dây/ngắt kết nối
+    port.addEventListener('disconnect', () => {
+      statusEl.innerText = "Trạng thái: ĐÃ NGẮT KẾT NỐI";
+      statusEl.className = "status disconnected";
+      printLog(" Cổng COM đã bị rút ra!");
+    });
+
+    readData();
+  }
+
+  // 4. HÀM GỬI LỆNH XUỐNG ESP32
+  async function sendData(cmd) {
+    if (!writer) {
+      alert("Chưa kết nối cổng COM!");
+      return;
+    }
+    const encoder = new TextEncoder();
+	await writer.write(encoder.encode(cmd));
+    
+    printLog("Gửi lệnh: " + cmd);
+  }
+
+  // 5. HÀM ĐỌC DỮ LIỆU TỪ ESP32 PHẢN HỒI VỀ
+  <!-- async function readData() { -->
+    <!-- const textDecoder = new TextDecoderStream(); -->
+    <!-- const readableStreamClosed = port.readable.pipeTo(textDecoder.writable); -->
+    <!-- reader = textDecoder.readable.getReader(); -->
+
+    <!-- try { -->
+      <!-- while (true) { -->
+        <!-- const { value, done } = await reader.read(); -->
+		<!-- printLog("ESP32 gửi: " + value); -->
+        <!-- if (done) break; -->
+        <!-- if (value == "R1") { -->
+          <!-- //printLog("ESP32 gửi: " + value); -->
+		  <!-- printLog("ESP32 da bat relay"); -->
+        <!-- }else if (value == "R0"){ -->
+			<!-- printLog("ESP32 da tat relay"); -->
+		<!-- } -->
+      <!-- } -->
+    <!-- } catch (error) { -->
+      <!-- printLog("Lỗi đọc dữ liệu: " + error); -->
+    <!-- } finally { -->
+      <!-- reader.releaseLock(); -->
+    <!-- } -->
+  <!-- } -->
+  
+  <!-- async function readData() { -->
+  <!-- // Lấy luồng đọc dữ liệu và chuyển đổi thành dạng dòng text (Line Stream) -->
+  <!-- const textDecoder = new TextDecoderStream(); -->
+  <!-- const readableStreamClosed = port.readable.pipeTo(textDecoder.writable); -->
+  <!-- const reader = textDecoder.readable -->
+    <!-- .pipeThrough(new TransformStream(new LineBreakTransformer())) -->
+    <!-- .getReader(); -->
+
+  <!-- try { -->
+    <!-- while (true) { -->
+      <!-- const { value, done } = await reader.read(); -->
+      <!-- if (done) break; -->
+      <!-- if (value) { -->
+        <!-- // 'value' lúc này là NGUYÊN 1 CHUỖI HOÀN CHỈNH từ ESP32 gửi về -->
+        <!-- printLog("📥 ESP32 gửi: " + value.trim()); -->
+        
+        <!-- // Ví dụ: Bắt chuỗi để cập nhật giao diện Web -->
+        <!-- if (value.includes("DA BAT RELAY")) { -->
+          <!-- document.getElementById("status").innerText = "Trạng thái: RELAY ĐANG BẬT"; -->
+        <!-- } else if (value.includes("DA TAT RELAY")) { -->
+          <!-- document.getElementById("status").innerText = "Trạng thái: RELAY ĐANG TẮT"; -->
+        <!-- } -->
+      <!-- } -->
+    <!-- } -->
+  <!-- } catch (err) { -->
+    <!-- printLog("❌ Lỗi đọc dữ liệu: " + err.message); -->
+  <!-- } finally { -->
+    <!-- reader.releaseLock(); -->
+  <!-- } -->
+<!-- } -->
+
+<!-- // Bộ tách dòng (Line Transformer) đơn giản xử lý ký tự \n -->
+<!-- class LineBreakTransformer { -->
+  <!-- constructor() { -->
+    <!-- this.chunks = ""; -->
+  <!-- } -->
+  <!-- transform(chunk, controller) { -->
+    <!-- this.chunks += chunk; -->
+    <!-- const lines = this.chunks.split("\n"); -->
+    <!-- this.chunks = lines.pop(); // Giữ lại phần dở dang chưa có \n -->
+    <!-- lines.forEach((line) => controller.enqueue(line)); -->
+  <!-- } -->
+  <!-- flush(controller) { -->
+    <!-- if (this.chunks) { -->
+      <!-- controller.enqueue(this.chunks); -->
+    <!-- } -->
+  <!-- } -->
+<!-- } -->
+
+	let rxBuffer = ""; // Biến chứa dữ liệu dồn dập gửi về
+
+	async function readData() {
+	  while (port.readable) {
+		const reader = port.readable.getReader();
+		try {
+		  while (true) {
+			const { value, done } = await reader.read();
+			if (done) break;
+			if (value) {
+			  // Giải mã byte thành chuỗi và cộng dồn vào buffer
+			  rxBuffer += new TextDecoder().decode(value);
+
+			  // Kiểm tra xem trong buffer có ký tự xuống dòng '\n' chưa
+			  if (rxBuffer.includes("\n")) {
+				let lines = rxBuffer.split("\n"); // Tách thành các dòng
+				
+				// Lấy các dòng đã hoàn chỉnh ra xử lý
+				for (let i = 0; i < lines.length - 1; i++) {
+				  let completeString = lines[i].trim();
+				  if (completeString.length > 0) {
+					printLog("📥 ESP32 gửi: " + completeString);
+				  }
+				}
+				
+				// Giữ lại phần dư chưa có '\n' ở cuối
+				rxBuffer = lines[lines.length - 1];
+			  }
+			}
+		  }
+		} catch (err) {
+		  printLog("❌ Lỗi nhận dữ liệu: " + err.message);
+		} finally {
+		  reader.releaseLock();
+		}
+	  }
+	}
+
+  // Tự động kích hoạt khi trang Web load xong
+  window.addEventListener('DOMContentLoaded', autoConnect);
+</script>
+
+</body>
+</html>
